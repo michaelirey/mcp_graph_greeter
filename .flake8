@@ -1,0 +1,18 @@
+[flake8]
+max-line-length = 140
+# Ignore line length in docstrings
+extend-ignore = D301,D401,E501
+
+# D301 and D401 are docstring formatting rules that can be relaxed
+# E501 is used with per-file-ignores to ignore line length in docstrings
+
+# W292 enforces newline at end of file
+select = E,F,W,C
+extend-select = W292
+
+# Ignore E501 in files that have long docstrings
+per-file-ignores =
+    # Ignore E501 in all modules for lines within docstrings
+    *.py:E501
+
+exclude = .venv,venv,.git,__pycache__

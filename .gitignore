@@ -71,4 +71,5 @@ venv.bak/
 
 # Local development settings
 .env.local
-.env.development.local.langgraph_api/
+.env.development.local
+.langgraph_api/

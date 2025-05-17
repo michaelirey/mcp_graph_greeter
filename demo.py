@@ -16,64 +16,70 @@ from mcp_graph_greeter import invoke_greeter
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("mcp_graph_greeter_demo")
+
 
 async def interactive_session():
     """Run an interactive session with the MCP Graph Greeter."""
     print("\n📁 Welcome to the MCP Graph Greeter Demo 📁\n")
-    print("This demo allows you to interact with a filesystem assistant powered by LangGraph and MCP.")
-    print("You can ask about files in your current directory, create new files, and more.")
-    
+    print(
+        "This demo allows you to interact with a filesystem assistant powered by LangGraph and MCP."
+    )
+    print(
+        "You can ask about files in your current directory, create new files, and more."
+    )
+
     # Start with an introduction
     messages: List[BaseMessage] = []
-    
+
     try:
         # First message - introduce yourself
         user_input = input("\n🧑 Please introduce yourself (e.g., 'Hello, my name is Alice'): ")
         if not user_input:
             user_input = "Hello there!"
-        
+
         # Get greeting response
         print("\n🤖 Contacting the assistant...")
         messages = await invoke_greeter(user_input)
-        
+
         # Print the response
         for message in messages:
             if isinstance(message, HumanMessage):
                 print(f"\n🧑 {message.content}")
             else:
                 print(f"\n🤖 Assistant: {message.content}")
-        
+
         # Continue the conversation
         while True:
             # Get user input
             user_input = input("\n🧑 Your input: ")
             
             # Check for exit command
-            if user_input.lower() in ['exit', 'quit', 'bye']:
+            if user_input.lower() in ["exit", "quit", "bye"]:
                 print("\n👋 Thanks for using the MCP Graph Greeter Demo! Goodbye!")
                 break
-            
+
             # Get response
             print("\n🤖 Thinking...")
             new_messages = await invoke_greeter(user_input, context_messages=messages)
-            
+
             # Store all messages for context
             messages = new_messages
-            
+
             # Print just the latest response
             latest_response = messages[-1]
             print(f"\n🤖 Assistant: {latest_response.content}")
-            
+
     except KeyboardInterrupt:
         print("\n\n👋 Demo interrupted. Goodbye!")
     except Exception as e:
         logger.error(f"Error in interactive session: {str(e)}")
         print(f"\n❌ An error occurred: {str(e)}")
-    
+
+
 if __name__ == "__main__":
     # Run the interactive session
     asyncio.run(interactive_session())

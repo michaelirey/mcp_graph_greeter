@@ -19,6 +19,8 @@ dependencies = [
     "langchain-mcp-adapters>=0.1.0",
     "typing-extensions>=4.7.0",
     "python-dotenv>=0.21.0",
+    "flake8",
+    "black"
 ]
 
 [project.optional-dependencies]
