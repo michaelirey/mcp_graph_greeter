@@ -88,14 +88,13 @@ Try asking me something like:
 - "Create a new file for me"
 
 What would you like to know about your filesystem?"""
-
-    # Create response message
+    # Create response message and append to history
     response = AIMessage(content=greeting)
 
-    # Return updated state
+    # Return updated state with full message history
     logger.info(f"Generated greeting: {greeting}")
     return {
-        "messages": [response],
+        "messages": messages + [response],
         "greeting": greeting,
         "name": name if name else "User",
     }
