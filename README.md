@@ -106,7 +106,10 @@ if __name__ == "__main__":
 
 ## Project Structure
 
-- `mcp_graph_greeter.py` - Main implementation of the graph
+- `core.py` - Core graph implementation
+- `api.py` - Helpers for programmatic use and the demo script
+- `cli.py` - Entry point used by the LangGraph CLI
+- `mcp_graph_greeter.py` - Aggregates the public interfaces
 - `config.py` - Configuration for the MCP server
 - `demo.py` - Command-line demo script
 - `langgraph.json` - Configuration for the LangGraph CLI
