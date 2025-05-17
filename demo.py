@@ -56,7 +56,7 @@ async def interactive_session():
         while True:
             # Get user input
             user_input = input("\n🧑 Your input: ")
-            
+
             # Check for exit command
             if user_input.lower() in ["exit", "quit", "bye"]:
                 print("\n👋 Thanks for using the MCP Graph Greeter Demo! Goodbye!")
