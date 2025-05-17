@@ -32,4 +32,4 @@ dev = [
 
 [tool.setuptools]
 packages = {find = {where = ["."], include = ["*.py"]}}
-py-modules = ["mcp_graph_greeter", "config"]
+py-modules = ["mcp_graph_greeter", "config", "core", "cli", "api"]
