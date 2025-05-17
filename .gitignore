@@ -73,6 +73,3 @@ venv.bak/
 .env.local
 .env.development.local
 .langgraph_api/
-
-# Dependency lock file
-uv.lock
