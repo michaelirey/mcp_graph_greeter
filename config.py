@@ -1,6 +1,7 @@
 """
 Configuration module for MCP Graph Greeter
 """
+
 import os
 from pathlib import Path
 import logging
@@ -29,9 +30,9 @@ FILESYSTEM_SERVER = {
         "args": [
             "-y",
             "@modelcontextprotocol/server-filesystem",
-            WORKSPACE_DIR  # Only allow access to current working directory
+            WORKSPACE_DIR,  # Only allow access to current working directory
         ],
-        "transport": "stdio"  # Required by MultiServerMCPClient
+        "transport": "stdio",  # Required by MultiServerMCPClient
     }
 }
 
