@@ -41,23 +41,11 @@ class GreeterState(TypedDict, total=False):
     """State type for the MCP graph greeter."""
 
     messages: Annotated[List[BaseMessage], add_messages]
-    greeting: str
-    file_info: str
-    name: str
 
 
 async def greeter(state: GreeterState, config: RunnableConfig) -> Dict:
-    """
-    Generate a personalized greeting and ask about files.
+    """Generate a personalized greeting and ask about files."""
 
-    Args:
-        state: Current graph state
-        config: Configuration for the model
-
-    Returns:
-        Updated state with greeting
-    """
-    # Extract input from the last human message
     messages = state["messages"]
     name = ""
     for message in reversed(messages):
@@ -91,13 +79,8 @@ What would you like to know about your filesystem?"""
     # Create response message and append to history
     response = AIMessage(content=greeting)
 
-    # Return updated state with full message history
     logger.info(f"Generated greeting: {greeting}")
-    return {
-        "messages": messages + [response],
-        "greeting": greeting,
-        "name": name if name else "User",
-    }
+    return {"messages": messages + [response]}
 
 
 def should_continue(state: GreeterState) -> str:
@@ -289,12 +272,7 @@ async def invoke_greeter(
             messages.append(HumanMessage(content=message))
 
             # Create initial state
-            initial_state = {
-                "messages": messages,
-                "greeting": "",
-                "file_info": "",
-                "name": "",
-            }
+            initial_state = {"messages": messages}
 
             # Run the graph asynchronously
             result = await graph.ainvoke(initial_state)
