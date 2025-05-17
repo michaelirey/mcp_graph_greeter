@@ -36,7 +36,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Define state type
+# Define input and state types
+class GreeterInput(TypedDict):
+    """Input type for the MCP graph greeter."""
+    
+    messages: List[BaseMessage]  # Required input message(s)
+
+class GreeterOutput(TypedDict):
+    """Output type for the MCP graph greeter."""
+    
+    messages: List[BaseMessage]  # Output messages
+
 class GreeterState(TypedDict, total=False):
     """State type for the MCP graph greeter."""
 
@@ -173,8 +183,8 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
         response = await model_with_tools.ainvoke(messages, config)
         return {"messages": [response]}
 
-    # Create the graph
-    workflow = StateGraph(GreeterState)
+    # Create the graph with input and output types
+    workflow = StateGraph(GreeterState, input=GreeterInput, output=GreeterOutput)
 
     # Add nodes
     workflow.add_node("greeter", greeter)
@@ -204,90 +214,6 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
     return workflow.compile()
 
 
-@asynccontextmanager
-async def mcp_graph_greeter() -> AsyncIterator:
-    """
-    Create a filesystem graph greeter with async context management.
-
-    This function:
-    1. Initializes the MCP client and connects to the MCP server using session
-    2. Creates a LangGraph workflow with the model and filesystem tools
-    3. Yields the graph for use
-    4. Ensures the MCP session is properly closed
-
-    Follows the recommended pattern from langchain-mcp-adapters 0.1.0.
-
-    Yields:
-        A configured LangGraph for filesystem operations
-    """
-    # Create MCP client (not using it as a context manager)
-    client = MultiServerMCPClient(FILESYSTEM_SERVER)
-
-    # Use the client's session method for the filesystem server
-    async with client.session("filesystem") as session:
-        # Get tools using the load_mcp_tools function
-        try:
-            filesystem_tools = await load_mcp_tools(session)
-            logger.info(f"Loaded {len(filesystem_tools)} filesystem tools")
-
-            # Create the graph with the tools
-            graph = build_greeter_graph(filesystem_tools)
-            logger.info("MCP Graph Greeter created successfully")
-
-            # Yield the graph - the session will remain active during this context
-            yield graph
-        except Exception as e:
-            logger.error(f"Error creating MCP Graph Greeter: {str(e)}")
-            raise
-        finally:
-            # Clean up is handled by async context manager of the session
-            logger.info("MCP Graph Greeter closed")
-
-
-async def invoke_greeter(
-    message: str,
-    context_messages: Optional[List[BaseMessage]] = None,
-) -> List[BaseMessage]:
-    """
-    Invoke the MCP Graph Greeter with a message.
-
-    Args:
-        message: User's message
-        context_messages: Optional list of previous messages for context
-
-    Returns:
-        The complete conversation history
-    """
-    try:
-        # Create the graph with the async context manager
-        async with mcp_graph_greeter() as graph:
-            # Prepare initial messages
-            messages = []
-
-            # Add context messages if provided
-            if context_messages:
-                messages.extend(context_messages)
-
-            # Add the human message
-            messages.append(HumanMessage(content=message))
-
-            # Create initial state
-            initial_state = {"messages": messages}
-
-            # Run the graph asynchronously
-            result = await graph.ainvoke(initial_state)
-            logger.info("Graph execution completed successfully")
-            return result["messages"]
-
-    except Exception as e:
-        # Log the error
-        logger.error(f"Error running MCP Graph Greeter: {str(e)}")
-        import traceback
-
-        logger.error(f"Traceback: {traceback.format_exc()}")
-
-        # Return a simple message with the error
-        return [HumanMessage(content=message), AIMessage(content=f"Error: {str(e)}")]
 
 
 @asynccontextmanager

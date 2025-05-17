@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 import mcp_graph_greeter as mg
+import greeter_service as gs
 
 class DummyGraph:
     async def ainvoke(self, initial_state):
@@ -14,8 +15,8 @@ async def dummy_greeter():
 
 @pytest.mark.asyncio
 async def test_invoke_greeter_returns_messages(monkeypatch):
-    monkeypatch.setattr(mg, "mcp_graph_greeter", dummy_greeter)
-    messages = await mg.invoke_greeter("hi")
+    monkeypatch.setattr(gs, "mcp_graph_greeter", dummy_greeter)
+    messages = await gs.invoke_greeter("hi")
     assert isinstance(messages, list)
     assert all(isinstance(m, BaseMessage) for m in messages)
 

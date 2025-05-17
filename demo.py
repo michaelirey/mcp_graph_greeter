@@ -11,7 +11,7 @@ from typing import List
 
 from langchain_core.messages import BaseMessage, HumanMessage
 
-from mcp_graph_greeter import invoke_greeter
+from greeter_service import invoke_greeter
 
 # Set up logging
 logging.basicConfig(
@@ -36,10 +36,12 @@ async def interactive_session():
     messages: List[BaseMessage] = []
 
     try:
-        # First message - introduce yourself
-        user_input = input("\n🧑 Please introduce yourself (e.g., 'Hello, my name is Alice'): ")
-        if not user_input:
-            user_input = "Hello there!"
+        # First message - introduce yourself - required
+        while True:
+            user_input = input("\n🧑 Please introduce yourself (e.g., 'Hello, my name is Alice'): ")
+            if user_input:
+                break
+            print("⚠️  Introduction is required. Please try again.")
 
         # Get greeting response
         print("\n🤖 Contacting the assistant...")
@@ -54,9 +56,13 @@ async def interactive_session():
 
         # Continue the conversation
         while True:
-            # Get user input
-            user_input = input("\n🧑 Your input: ")
-
+            # Get user input - required
+            while True:
+                user_input = input("\n🧑 Your input: ")
+                if user_input:
+                    break
+                print("⚠️  Input is required. Please try again.")
+            
             # Check for exit command
             if user_input.lower() in ["exit", "quit", "bye"]:
                 print("\n👋 Thanks for using the MCP Graph Greeter Demo! Goodbye!")

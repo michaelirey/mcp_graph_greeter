@@ -70,7 +70,7 @@ Once the server is running, you can access the web UI at http://localhost:8000 a
 Alternatively, you can use the included demo script for a command-line experience:
 
 ```bash
-python demo.py
+uv run python demo.py
 ```
 
 ### Using in Your Own Code
@@ -80,7 +80,7 @@ You can also use the greeter programmatically in your own code:
 ```python
 import asyncio
 from langchain_core.messages import HumanMessage
-from mcp_graph_greeter import invoke_greeter
+from greeter_service import invoke_greeter
 
 async def main():
     # Start a conversation
@@ -106,7 +106,8 @@ if __name__ == "__main__":
 
 ## Project Structure
 
-- `mcp_graph_greeter.py` - Main implementation of the graph
+- `mcp_graph_greeter.py` - Main implementation of the graph and LangGraph CLI entry point
+- `greeter_service.py` - Service functions for using the greeter in applications
 - `config.py` - Configuration for the MCP server
 - `demo.py` - Command-line demo script
 - `langgraph.json` - Configuration for the LangGraph CLI
