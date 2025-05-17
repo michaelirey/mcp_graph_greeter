@@ -1,0 +1,6 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "mcp_greeter": "./mcp_graph_greeter.py:graph_factory"
+  }
+}
