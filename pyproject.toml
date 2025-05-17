@@ -26,7 +26,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "uvx",
-    "langgraph-cli[inmem]"
+    "langgraph-cli[inmem]",
+    "pytest"
 ]
 
 [tool.setuptools]
