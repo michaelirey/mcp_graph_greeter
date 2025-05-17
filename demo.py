@@ -32,7 +32,7 @@ async def interactive_session():
     
     try:
         # First message - introduce yourself
-        user_input = input("\n🧑‍💻 Please introduce yourself (e.g., 'Hello, my name is Alice'): ")
+        user_input = input("\n🧑 Please introduce yourself (e.g., 'Hello, my name is Alice'): ")
         if not user_input:
             user_input = "Hello there!"
         
@@ -43,14 +43,14 @@ async def interactive_session():
         # Print the response
         for message in messages:
             if isinstance(message, HumanMessage):
-                print(f"\n🧑‍💻 You: {message.content}")
+                print(f"\n🧑 {message.content}")
             else:
                 print(f"\n🤖 Assistant: {message.content}")
         
         # Continue the conversation
         while True:
             # Get user input
-            user_input = input("\n🧑‍💻 Your message (or type 'exit' to quit): ")
+            user_input = input("\n🧑 Your input: ")
             
             # Check for exit command
             if user_input.lower() in ['exit', 'quit', 'bye']:
