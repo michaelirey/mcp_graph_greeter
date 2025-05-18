@@ -6,7 +6,7 @@ outside of the LangGraph CLI.
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
@@ -14,7 +14,13 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_mcp_adapters.tools import load_mcp_tools
 
-from config import FILESYSTEM_SERVER
+from config.loader import (
+    load_server_configs,
+    create_server_map,
+    get_allowed_tools_map,
+    get_sensitive_tools_map,
+    namespace_tool_name,
+)
 from mcp_graph_greeter import build_greeter_graph
 
 # Set up logging
@@ -28,37 +34,74 @@ async def mcp_graph_greeter() -> AsyncIterator:
     Create a filesystem graph greeter with async context management.
 
     This function:
-    1. Initializes the MCP client and connects to the MCP server using session
-    2. Creates a LangGraph workflow with the model and filesystem tools
-    3. Yields the graph for use
-    4. Ensures the MCP session is properly closed
-
-    Follows the recommended pattern from langchain-mcp-adapters 0.1.0.
+    1. Loads server configurations from JSON files
+    2. Initializes the MCP client and connects to the MCP server
+    3. Creates a LangGraph workflow with the model and tools
+    4. Yields the graph for use
+    5. Ensures the MCP session is properly closed
 
     Yields:
         A configured LangGraph for filesystem operations
     """
-    # Create MCP client (not using it as a context manager)
-    client = MultiServerMCPClient(FILESYSTEM_SERVER)
-
-    # Use the client's session method for the filesystem server
-    async with client.session("filesystem") as session:
-        # Get tools using the load_mcp_tools function
+    # Load server configurations
+    server_configs = load_server_configs()
+    if not server_configs:
+        logger.error("No server configurations found")
+        raise ValueError("No server configurations found. Please add at least one server configuration.")
+    
+    # Create maps
+    server_map = create_server_map(server_configs)
+    allowed_tools_map = get_allowed_tools_map(server_configs)
+    sensitive_tools_map = get_sensitive_tools_map(server_configs)
+    
+    # Use the first server in the list (usually filesystem)
+    default_server = server_configs[0]["server_name"]
+    logger.info(f"Using {default_server} as the default server for the graph greeter service")
+    
+    # Create client with all servers
+    client = MultiServerMCPClient(server_map)
+    
+    # Use the first server for the session (typically filesystem for this service)
+    async with client.session(default_server) as session:
         try:
-            filesystem_tools = await load_mcp_tools(session)
-            logger.info(f"Loaded {len(filesystem_tools)} filesystem tools")
-
-            # Sensitive tools requiring human approval
-            sensitive_tools = ["read_file", "get_file_info"]
-
-            # Create the graph with the tools
-            graph = build_greeter_graph(filesystem_tools, sensitive_tools)
-            logger.info(
-                f"MCP Graph Greeter created successfully with {len(sensitive_tools)} sensitive tools"
+            # Get tools for the session
+            tools = await load_mcp_tools(session)
+            logger.info(f"Loaded {len(tools)} tools from {default_server} server")
+            
+            # Namespace the tools
+            namespaced_tools = []
+            for tool in tools:
+                # Skip if not in allowed tools list
+                if tool.name not in allowed_tools_map.get(default_server, []):
+                    continue
+                
+                # Initialize metadata if None
+                if tool.metadata is None:
+                    tool.metadata = {}
+                
+                # Preserve original name
+                tool.metadata["original_name"] = tool.name
+                tool.metadata["server_name"] = default_server
+                
+                # Add namespace using underscore instead of dot
+                namespaced_name = namespace_tool_name(default_server, tool.name)
+                tool.name = namespaced_name
+                
+                namespaced_tools.append(tool)
+            
+            logger.info(f"Using {len(namespaced_tools)} namespaced tools after filtering")
+            
+            # Create the graph with tools and sensitive map for this server
+            graph = build_greeter_graph(
+                namespaced_tools, 
+                {default_server: sensitive_tools_map.get(default_server, [])}
             )
-
+            
+            logger.info(f"MCP Graph Greeter created successfully")
+            
             # Yield the graph - the session will remain active during this context
             yield graph
+            
         except Exception as e:
             logger.error(f"Error creating MCP Graph Greeter: {str(e)}")
             raise

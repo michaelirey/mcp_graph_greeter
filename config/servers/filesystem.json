@@ -1,0 +1,30 @@
+{
+  "server_name": "filesystem",
+  "endpoint": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      "."
+    ],
+    "transport": "stdio"
+  },
+  "allowed_tools": [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "create_directory",
+    "list_directory",
+    "directory_tree",
+    "move_file",
+    "search_files",
+    "get_file_info",
+    "list_allowed_directories"
+  ],
+  "sensitive_tools": [
+    "write_file",
+    "edit_file",
+    "create_directory",
+    "move_file"
+  ]
+}
