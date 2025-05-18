@@ -109,6 +109,10 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
     Returns:
         A compiled graph ready to use
     """
+    # Import required modules for human-in-the-loop
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import interrupt, Command
+
     # Initialize the model with tools bound using config values
     model = ChatOpenAI(
         model=LLM_MODEL_NAME, api_key=OPENAI_API_KEY if OPENAI_API_KEY else None
@@ -137,6 +141,78 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
 
         response = model_with_tools.invoke(messages, config)
         return {"messages": [response]}
+    
+    # Define a human review node for tool calls
+    def review_tool_calls(state: GreeterState) -> Command:
+        """Review tool calls before executing them."""
+        last_message = state["messages"][-1]
+        
+        # If there are no tool calls, move on
+        if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
+            return Command(goto="tools")
+        
+        tool_call = last_message.tool_calls[0]
+        tool_name = tool_call["name"]
+        
+        # Only request human approval for specific sensitive tools
+        sensitive_tools = ["read_file", "get_file_info"]
+        
+        # If the tool is not in our sensitive list, skip review
+        if tool_name not in sensitive_tools:
+            logger.info(f"Tool '{tool_name}' not sensitive - skipping review")
+            return Command(goto="tools")
+            
+        # Interrupt and wait for human review of the tool call
+        # This will be displayed in the UI for user approval
+        human_review = interrupt({
+            "question": f"Review required for sensitive tool '{tool_name}'. Approve? (Enter 'true' to approve or 'false' to cancel)",
+            "tool_call": tool_call
+        })
+        
+        # Handle boolean responses (true/false)
+        if human_review is True:
+            # Continue with the original tool call
+            return Command(goto="tools")
+        elif human_review is False:
+            # Cancel the tool call and go back to the agent
+            feedback = {
+                "role": "tool", 
+                "content": "Tool call was canceled by the user.",
+                "name": tool_name,
+                "tool_call_id": tool_call["id"]
+            }
+            return Command(goto="agent", update={"messages": [feedback]})
+        
+        # Also handle dictionary responses for modification
+        elif isinstance(human_review, dict):
+            # If args are provided, update the tool call
+            if "args" in human_review:
+                updated_message = AIMessage(
+                    content=last_message.content,
+                    tool_calls=[{
+                        "id": tool_call["id"],
+                        "name": tool_name,
+                        "args": human_review["args"],
+                        "type": "tool_call"
+                    }],
+                    id=last_message.id
+                )
+                return Command(goto="tools", update={"messages": [updated_message]})
+            # If action is provided
+            elif "action" in human_review:
+                if human_review["action"] == "approve":
+                    return Command(goto="tools")
+                else:
+                    feedback = {
+                        "role": "tool", 
+                        "content": "Tool call was canceled by the user.",
+                        "name": tool_name,
+                        "tool_call_id": tool_call["id"]
+                    }
+                    return Command(goto="agent", update={"messages": [feedback]})
+        
+        # Default: continue with the tool call
+        return Command(goto="tools")
 
     # Create the graph with input and output types
     workflow = StateGraph(GreeterState, input=GreeterInput, output=GreeterOutput)
@@ -145,6 +221,7 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
     workflow.add_node("greeter", greeter)
     workflow.add_node("agent", agent)
     workflow.add_node("respond", respond)
+    workflow.add_node("review_tool_calls", review_tool_calls)
 
     # Add tools node
     tool_node = ToolNode(tools)
@@ -156,17 +233,19 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
 
     # Add conditional edges for the agent
     workflow.add_conditional_edges(
-        "agent", should_continue, {"tools": "tools", "respond": "respond"}
+        "agent", should_continue, {"tools": "review_tool_calls", "respond": "respond"}
     )
 
-    # Add edge from tools back to agent
+    # Add edge from review to tools and from tools back to agent
+    workflow.add_edge("review_tool_calls", "tools")
     workflow.add_edge("tools", "agent")
 
     # Add edge from respond to end
     workflow.add_edge("respond", END)
 
-    # Compile the graph
-    return workflow.compile()
+    # Compile the graph with memory to support interrupts
+    checkpointer = MemorySaver()
+    return workflow.compile(checkpointer=checkpointer)
 
 
 
