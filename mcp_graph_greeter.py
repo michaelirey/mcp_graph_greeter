@@ -16,9 +16,10 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.tools import BaseTool
-from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langchain_core.runnables import RunnableConfig
+
+from mcp_servers import build_wrappers, load_all_tools
 
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
@@ -153,12 +154,15 @@ def build_greeter_graph(
 
         tool_call = last_message.tool_calls[0]
         tool_name = tool_call["name"]
+        base_name = tool_name.split(":", 1)[-1]
 
         # Only request human approval for specific sensitive tools defined at the graph_factory level
 
         # If the tool is not in our sensitive list, skip review
-        if tool_name not in sensitive_tools:
-            logger.info(f"Tool '{tool_name}' not sensitive - skipping review")
+        if base_name not in sensitive_tools:
+            logger.info(
+                f"Tool '{tool_name}' not sensitive - skipping review"
+            )
             return Command(goto="tools")
 
         # Interrupt and wait for human review of the tool call
@@ -286,36 +290,19 @@ async def graph_factory():
         "shell_execute",
     ]
 
-    # Initialize tools list
-    all_tools = []
+    allowed = {"filesystem": allowed_tools, "shell": allowed_tools}
 
-    # Create a combined client for all servers
-    all_servers = {}
-    all_servers.update({"filesystem": MCP_SERVERS["filesystem"]})
-    all_servers.update({"context7": MCP_SERVERS["context7"]})
-    all_servers.update({"shell": MCP_SERVERS["shell"]})
-
-    # Create a single client for all servers
-    client = MultiServerMCPClient(all_servers)
+    wrappers = build_wrappers(MCP_SERVERS, allowed)
 
     try:
-        # Get all tools directly without sessions
-        # This approach uses the client's built-in methods to handle session management
-        tools = await client.get_tools()
+        tools = await load_all_tools(wrappers)
         logger.info(f"Loaded {len(tools)} total tools")
 
-        # Filter filesystem tools if needed
-        fs_tools_filtered = [t for t in tools if t.name in allowed_tools]
-        logger.info(f"Using {len(fs_tools_filtered)}/{len(tools)} allowed tools")
-        all_tools.extend(fs_tools_filtered)
-
-        # Create graph with all tools
-        graph = build_greeter_graph(all_tools, sensitive_tools)
+        graph = build_greeter_graph(tools, sensitive_tools)
         logger.info(
-            f"MCP Graph Greeter created with {len(all_tools)} tools ({len(sensitive_tools)} requiring approval)"
+            f"MCP Graph Greeter created with {len(tools)} tools ({len(sensitive_tools)} requiring approval)"
         )
 
-        # Yield graph while keeping sessions active
         yield graph
 
     except Exception as e:

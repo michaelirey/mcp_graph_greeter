@@ -13,6 +13,8 @@ This project showcases how to integrate LangGraph with MCP tools to create an in
 - File reading and creation
 - Proper resource management with async context managers
 - Structured LangGraph workflow
+- Simple wrappers for each MCP server, with tool names automatically
+  prefixed by the server name
 
 ## Requirements
 
@@ -107,6 +109,7 @@ if __name__ == "__main__":
 ## Project Structure
 
 - `mcp_graph_greeter.py` - Main implementation of the graph and LangGraph CLI entry point
+- `mcp_servers.py` - Wrappers for launching MCP servers and loading namespaced tools
 - `greeter_service.py` - Service functions for using the greeter in applications
 - `config.py` - Configuration for the MCP server
 - `demo.py` - Command-line demo script
