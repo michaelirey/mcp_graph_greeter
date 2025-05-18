@@ -1,0 +1,16 @@
+{
+  "server_name": "context7",
+  "endpoint": {
+    "command": "npx",
+    "args": [
+      "-y", 
+      "@upstash/context7-mcp@latest"
+    ],
+    "transport": "stdio"
+  },
+  "allowed_tools": [
+    "resolve-library-id",
+    "get-library-docs"
+  ],
+  "sensitive_tools": []
+}

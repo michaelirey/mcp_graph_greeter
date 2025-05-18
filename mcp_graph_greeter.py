@@ -6,7 +6,7 @@ with proper resource management and async execution patterns.
 """
 
 from contextlib import asynccontextmanager
-from typing import List, Dict
+from typing import List, Dict, Optional, Tuple
 import logging
 from typing_extensions import TypedDict, Annotated
 
@@ -25,8 +25,16 @@ from langgraph.graph.message import add_messages
 from langgraph.constants import END, START
 from langgraph.prebuilt.tool_node import ToolNode
 
-# Import MCP server configuration
-from config import MCP_SERVERS, OPENAI_API_KEY, LLM_MODEL_NAME
+# Import configuration
+from config import OPENAI_API_KEY, LLM_MODEL_NAME
+from config.loader import (
+    load_server_configs,
+    create_server_map,
+    get_allowed_tools_map,
+    get_sensitive_tools_map,
+    split_namespaced_tool,
+    namespace_tool_name,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -94,21 +102,22 @@ async def respond(state: GreeterState, config: RunnableConfig) -> Dict:
 
 
 def build_greeter_graph(
-    tools: List[BaseTool], sensitive_tools: List[str] = None
+    tools: List[BaseTool], sensitive_tools_map: Dict[str, List[str]] = None
 ) -> StateGraph:
     """
-    Build a greeter graph with the provided filesystem tools.
+    Build a greeter graph with the provided tools.
 
     Args:
-        tools: List of filesystem tools to use
-        sensitive_tools: List of tool names that require human approval before execution
+        tools: List of tools to use
+        sensitive_tools_map: Map of server names to lists of sensitive tool names
 
     Returns:
         A compiled graph ready to use
     """
-    # Default to empty list if None
-    if sensitive_tools is None:
-        sensitive_tools = []
+    # Default to empty dict if None
+    if sensitive_tools_map is None:
+        sensitive_tools_map = {}
+    
     # Import required modules for human-in-the-loop
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.types import interrupt, Command
@@ -120,14 +129,20 @@ def build_greeter_graph(
     model_with_tools = model.bind_tools(tools)
 
     # Define the system prompt
-    system_prompt = """You are a helpful filesystem assistant that can help users navigate and manage their files.
-    You can provide information about files, read file contents, create new files, and more.
+    system_prompt = """You are a helpful assistant that can help users with various operations using tools from different servers.
+    You can provide information about files, read file contents, create new files, search for documentation, and more.
 
     When asked about directories, provide a clear listing of files and subdirectories.
     When asked about file contents, provide the contents in a nicely formatted way.
     When creating files, confirm the creation and provide the file path.
 
-    Always be friendly, helpful, and focused on filesystem operations.
+    Tools are namespaced with their server name using the format: server_toolname
+    For example:
+    - filesystem_read_file: Reads a file from the filesystem
+    - context7_get-library-docs: Gets documentation for a library
+    - shell_shell_execute: Executes a shell command
+
+    Always be friendly, helpful, and focused on the user's needs.
     """
 
     # Define the agent function
@@ -152,68 +167,74 @@ def build_greeter_graph(
             return Command(goto="tools")
 
         tool_call = last_message.tool_calls[0]
-        tool_name = tool_call["name"]
-
-        # Only request human approval for specific sensitive tools defined at the graph_factory level
-
-        # If the tool is not in our sensitive list, skip review
-        if tool_name not in sensitive_tools:
-            logger.info(f"Tool '{tool_name}' not sensitive - skipping review")
+        namespaced_tool_name = tool_call["name"]
+        
+        # Split the namespaced tool name into server and tool parts
+        try:
+            server_name, tool_name = split_namespaced_tool(namespaced_tool_name)
+        except ValueError:
+            logger.warning(f"Invalid namespaced tool name: {namespaced_tool_name}, skipping review")
             return Command(goto="tools")
-
-        # Interrupt and wait for human review of the tool call
-        # This will be displayed in the UI for user approval
-        human_review = interrupt(
-            {
-                "question": f"Review required for sensitive tool '{tool_name}'. Approve? (Enter 'true' to approve or 'false' to cancel)",
-                "tool_call": tool_call,
-            }
-        )
-
-        # Handle boolean responses (true/false)
-        if human_review is True:
-            # Continue with the original tool call
-            return Command(goto="tools")
-        elif human_review is False:
-            # Cancel the tool call and go back to the agent
-            feedback = {
-                "role": "tool",
-                "content": "Tool call was canceled by the user.",
-                "name": tool_name,
-                "tool_call_id": tool_call["id"],
-            }
-            return Command(goto="agent", update={"messages": [feedback]})
-
-        # Also handle dictionary responses for modification
-        elif isinstance(human_review, dict):
-            # If args are provided, update the tool call
-            if "args" in human_review:
-                updated_message = AIMessage(
-                    content=last_message.content,
-                    tool_calls=[
-                        {
-                            "id": tool_call["id"],
-                            "name": tool_name,
-                            "args": human_review["args"],
-                            "type": "tool_call",
+        
+        # Check if the tool is sensitive for its server
+        if tool_name in sensitive_tools_map.get(server_name, []):
+            logger.info(f"Tool '{tool_name}' from server '{server_name}' is sensitive - requesting review")
+            
+            # Interrupt and wait for human review of the tool call
+            # This will be displayed in the UI for user approval
+            human_review = interrupt(
+                {
+                    "question": f"Review required for sensitive tool '{namespaced_tool_name}'. Approve? (Enter 'true' to approve or 'false' to cancel)",
+                    "tool_call": tool_call,
+                }
+            )
+            
+            # Handle boolean responses (true/false)
+            if human_review is True:
+                # Continue with the original tool call
+                return Command(goto="tools")
+            elif human_review is False:
+                # Cancel the tool call and go back to the agent
+                feedback = {
+                    "role": "tool",
+                    "content": "Tool call was canceled by the user.",
+                    "name": namespaced_tool_name,
+                    "tool_call_id": tool_call["id"],
+                }
+                return Command(goto="agent", update={"messages": [feedback]})
+            
+            # Also handle dictionary responses for modification
+            elif isinstance(human_review, dict):
+                # If args are provided, update the tool call
+                if "args" in human_review:
+                    updated_message = AIMessage(
+                        content=last_message.content,
+                        tool_calls=[
+                            {
+                                "id": tool_call["id"],
+                                "name": namespaced_tool_name,
+                                "args": human_review["args"],
+                                "type": "tool_call",
+                            }
+                        ],
+                        id=last_message.id,
+                    )
+                    return Command(goto="tools", update={"messages": [updated_message]})
+                # If action is provided
+                elif "action" in human_review:
+                    if human_review["action"] == "approve":
+                        return Command(goto="tools")
+                    else:
+                        feedback = {
+                            "role": "tool",
+                            "content": "Tool call was canceled by the user.",
+                            "name": namespaced_tool_name,
+                            "tool_call_id": tool_call["id"],
                         }
-                    ],
-                    id=last_message.id,
-                )
-                return Command(goto="tools", update={"messages": [updated_message]})
-            # If action is provided
-            elif "action" in human_review:
-                if human_review["action"] == "approve":
-                    return Command(goto="tools")
-                else:
-                    feedback = {
-                        "role": "tool",
-                        "content": "Tool call was canceled by the user.",
-                        "name": tool_name,
-                        "tool_call_id": tool_call["id"],
-                    }
-                    return Command(goto="agent", update={"messages": [feedback]})
-
+                        return Command(goto="agent", update={"messages": [feedback]})
+        else:
+            logger.info(f"Tool '{tool_name}' from server '{server_name}' not sensitive - skipping review")
+        
         # Default: continue with the tool call
         return Command(goto="tools")
 
@@ -261,63 +282,81 @@ async def graph_factory():
         A configured LangGraph for filesystem operations
     """
     logger.info("Initializing MCP Graph Greeter for LangGraph CLI")
-
-    # Define allowed tools and sensitive tools that require approval
-    allowed_tools = [
-        "resolve-library-id",
-        "get-library-docs",
-        "read_file",
-        "write_file",
-        "edit_file",
-        "create_directory",
-        "list_directory",
-        "directory_tree",
-        "move_file",
-        "search_files",
-        "get_file_info",
-        "list_allowed_directories",
-        "shell_execute",
-    ]
-    sensitive_tools = [
-        "write_file",
-        "edit_file",
-        "create_directory",
-        "move_file",
-        "shell_execute",
-    ]
-
-    # Initialize tools list
-    all_tools = []
-
-    # Create a combined client for all servers
-    all_servers = {}
-    all_servers.update({"filesystem": MCP_SERVERS["filesystem"]})
-    all_servers.update({"context7": MCP_SERVERS["context7"]})
-    all_servers.update({"shell": MCP_SERVERS["shell"]})
-
-    # Create a single client for all servers
-    client = MultiServerMCPClient(all_servers)
-
+    
     try:
-        # Get all tools directly without sessions
-        # This approach uses the client's built-in methods to handle session management
-        tools = await client.get_tools()
-        logger.info(f"Loaded {len(tools)} total tools")
-
-        # Filter filesystem tools if needed
-        fs_tools_filtered = [t for t in tools if t.name in allowed_tools]
-        logger.info(f"Using {len(fs_tools_filtered)}/{len(tools)} allowed tools")
-        all_tools.extend(fs_tools_filtered)
-
-        # Create graph with all tools
-        graph = build_greeter_graph(all_tools, sensitive_tools)
+        # Load server configurations from JSON files
+        server_configs = load_server_configs()
+        if not server_configs:
+            logger.error("No server configurations found")
+            raise ValueError("No server configurations found. Please add at least one server configuration to the config/servers directory.")
+        
+        # Create maps for server endpoints, allowed tools, and sensitive tools
+        server_map = create_server_map(server_configs)
+        allowed_tools_map = get_allowed_tools_map(server_configs)
+        sensitive_tools_map = get_sensitive_tools_map(server_configs)
+        
+        logger.info(f"Loaded configurations for {len(server_configs)} servers")
+        
+        # Create a client for all servers
+        client = MultiServerMCPClient(server_map)
+        
+        # Get all tools from all servers
+        all_tools = []
+        raw_tools = await client.get_tools()
+        logger.info(f"Loaded {len(raw_tools)} total tools from all servers")
+        
+        # Process and namespace tools
+        for tool in raw_tools:
+            # Initialize metadata if None
+            if tool.metadata is None:
+                tool.metadata = {}
+                
+            # Get the server name from the tool metadata
+            server_name = tool.metadata.get("server_name")
+            if not server_name:
+                # Try to determine server from the available servers
+                # This is a fallback for tools that don't have server_name in metadata
+                for server in server_map.keys():
+                    if tool.name in allowed_tools_map.get(server, []):
+                        server_name = server
+                        tool.metadata["server_name"] = server_name
+                        logger.info(f"Assigned server '{server_name}' to tool '{tool.name}' based on allowed tools list")
+                        break
+                
+                # If still no server_name, skip this tool
+                if not server_name:
+                    logger.warning(f"Tool {tool.name} missing server_name in metadata and couldn't determine server, skipping")
+                    continue
+            
+            # Check if the tool is in the allowed list for its server
+            if tool.name not in allowed_tools_map.get(server_name, []):
+                logger.debug(f"Tool {tool.name} from server {server_name} not in allowed list, skipping")
+                continue
+            
+            # Preserve the original tool name in metadata
+            tool.metadata["original_name"] = tool.name
+            
+            # Namespace the tool name using underscore separator
+            namespaced_name = namespace_tool_name(server_name, tool.name)
+            tool.name = namespaced_name
+            
+            # Add the tool to the list
+            all_tools.append(tool)
+        
+        logger.info(f"Using {len(all_tools)} namespaced tools after filtering")
+        
+        # Create graph with all tools and the sensitive tools map
+        graph = build_greeter_graph(all_tools, sensitive_tools_map)
+        
+        # Count sensitive tools for logging
+        sensitive_count = sum(len(tools) for tools in sensitive_tools_map.values())
         logger.info(
-            f"MCP Graph Greeter created with {len(all_tools)} tools ({len(sensitive_tools)} requiring approval)"
+            f"MCP Graph Greeter created with {len(all_tools)} tools ({sensitive_count} requiring approval)"
         )
-
+        
         # Yield graph while keeping sessions active
         yield graph
-
+        
     except Exception as e:
         logger.error(f"Error creating MCP Graph Greeter: {str(e)}")
         raise
