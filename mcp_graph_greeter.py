@@ -184,17 +184,23 @@ async def graph_factory():
     """
     logger.info("Initializing MCP Graph Greeter for LangGraph CLI")
 
-    # Create MCP client (not using it as a context manager)
+    # Define which tools to include (comment this line to include all tools)
+    allowed_tools = ["list_directory", "read_file", "list_allowed_directories", "get_file_info", "search_files", "directory_tree"]
+
     client = MultiServerMCPClient(FILESYSTEM_SERVER)
 
     try:
         # Use the client's session method for the filesystem server
         async with client.session("filesystem") as session:
-            # Get tools using the load_mcp_tools function
-            filesystem_tools = await load_mcp_tools(session)
-            logger.info(f"Loaded {len(filesystem_tools)} filesystem tools")
+            # Get all tools using the load_mcp_tools function
+            all_tools = await load_mcp_tools(session)
+            logger.info(f"Loaded {len(all_tools)} filesystem tools")
+            
+            # Filter tools by name if allowed_tools is defined
+            filesystem_tools = [t for t in all_tools if not allowed_tools or t.name in allowed_tools]
+            logger.info(f"Using {len(filesystem_tools)}/{len(all_tools)} tools")
 
-            # Create the graph with the tools
+            # Create the graph with the filtered tools
             graph = build_greeter_graph(filesystem_tools)
             logger.info("MCP Graph Greeter created successfully")
 
