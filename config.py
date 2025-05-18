@@ -23,8 +23,8 @@ WORKSPACE_DIR = os.getcwd()  # Use current working directory as workspace
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-4.1")
 
-# Filesystem MCP server configuration
-FILESYSTEM_SERVER = {
+# MCP server configurations
+MCP_SERVERS = {
     "filesystem": {
         "command": "npx",
         "args": [
@@ -33,8 +33,19 @@ FILESYSTEM_SERVER = {
             WORKSPACE_DIR,  # Only allow access to current working directory
         ],
         "transport": "stdio",  # Required by MultiServerMCPClient
+    },
+    "context7": {
+        "command": "npx",
+        "args": [
+            "-y", 
+            "@upstash/context7-mcp@latest"
+        ],
+        "transport": "stdio"  # Required by MultiServerMCPClient
     }
 }
+
+# Backward compatibility for existing code
+FILESYSTEM_SERVER = {"filesystem": MCP_SERVERS["filesystem"]}
 
 logger.info(f"Configured workspace directory: {WORKSPACE_DIR}")
 logger.info(f"Using LLM model: {LLM_MODEL_NAME}")

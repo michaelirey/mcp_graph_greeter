@@ -48,9 +48,12 @@ async def mcp_graph_greeter() -> AsyncIterator:
             filesystem_tools = await load_mcp_tools(session)
             logger.info(f"Loaded {len(filesystem_tools)} filesystem tools")
 
+            # Sensitive tools requiring human approval
+            sensitive_tools = ["read_file", "get_file_info"]
+            
             # Create the graph with the tools
-            graph = build_greeter_graph(filesystem_tools)
-            logger.info("MCP Graph Greeter created successfully")
+            graph = build_greeter_graph(filesystem_tools, sensitive_tools)
+            logger.info(f"MCP Graph Greeter created successfully with {len(sensitive_tools)} sensitive tools")
 
             # Yield the graph - the session will remain active during this context
             yield graph

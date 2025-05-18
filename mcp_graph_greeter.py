@@ -29,7 +29,7 @@ from langgraph.utils.runnable import RunnableCallable
 from langgraph.prebuilt.tool_node import ToolNode
 
 # Import MCP server configuration
-from config import FILESYSTEM_SERVER, OPENAI_API_KEY, LLM_MODEL_NAME
+from config import MCP_SERVERS, FILESYSTEM_SERVER, OPENAI_API_KEY, LLM_MODEL_NAME
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -99,16 +99,20 @@ async def respond(state: GreeterState, config: RunnableConfig) -> Dict:
     return {}
 
 
-def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
+def build_greeter_graph(tools: List[BaseTool], sensitive_tools: List[str] = None) -> StateGraph:
     """
     Build a greeter graph with the provided filesystem tools.
 
     Args:
         tools: List of filesystem tools to use
+        sensitive_tools: List of tool names that require human approval before execution
 
     Returns:
         A compiled graph ready to use
     """
+    # Default to empty list if None
+    if sensitive_tools is None:
+        sensitive_tools = []
     # Import required modules for human-in-the-loop
     from langgraph.checkpoint.memory import MemorySaver
     from langgraph.types import interrupt, Command
@@ -154,8 +158,7 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
         tool_call = last_message.tool_calls[0]
         tool_name = tool_call["name"]
         
-        # Only request human approval for specific sensitive tools
-        sensitive_tools = ["read_file", "get_file_info"]
+        # Only request human approval for specific sensitive tools defined at the graph_factory level
         
         # If the tool is not in our sensitive list, skip review
         if tool_name not in sensitive_tools:
@@ -263,28 +266,45 @@ async def graph_factory():
     """
     logger.info("Initializing MCP Graph Greeter for LangGraph CLI")
 
-    # Define which tools to include (comment this line to include all tools)
+    # Define allowed tools and sensitive tools that require approval
     allowed_tools = ["list_directory", "read_file", "list_allowed_directories", "get_file_info", "search_files", "directory_tree"]
 
-    client = MultiServerMCPClient(FILESYSTEM_SERVER)
 
+    
+    sensitive_tools = ["read_file", "get_file_info"]
+    
+    # Initialize tools list
+    all_tools = []
+    
+    # Create a client per server with its own session
+    filesystem_client = MultiServerMCPClient({"filesystem": MCP_SERVERS["filesystem"]})
+    context7_client = MultiServerMCPClient({"context7": MCP_SERVERS["context7"]})
+    
     try:
-        # Use the client's session method for the filesystem server
-        async with client.session("filesystem") as session:
-            # Get all tools using the load_mcp_tools function
-            all_tools = await load_mcp_tools(session)
-            logger.info(f"Loaded {len(all_tools)} filesystem tools")
+        # Load filesystem tools - keep session open for the duration
+        async with filesystem_client.session("filesystem") as fs_session:
+            # Get all tools
+            fs_tools = await load_mcp_tools(fs_session)
+            logger.info(f"Loaded {len(fs_tools)} filesystem tools")
             
-            # Filter tools by name if allowed_tools is defined
-            filesystem_tools = [t for t in all_tools if not allowed_tools or t.name in allowed_tools]
-            logger.info(f"Using {len(filesystem_tools)}/{len(all_tools)} tools")
-
-            # Create the graph with the filtered tools
-            graph = build_greeter_graph(filesystem_tools)
-            logger.info("MCP Graph Greeter created successfully")
-
-            # Yield the graph - the session will remain active during this context
-            yield graph
+            # Filter tools
+            fs_tools_filtered = [t for t in fs_tools if t.name in allowed_tools]
+            logger.info(f"Using {len(fs_tools_filtered)}/{len(fs_tools)} filesystem tools")
+            all_tools.extend(fs_tools_filtered)
+            
+            # Load context7 tools - keep session open for the duration
+            async with context7_client.session("context7") as c7_session:
+                c7_tools = await load_mcp_tools(c7_session)
+                logger.info(f"Loaded {len(c7_tools)} context7 tools")
+                all_tools.extend(c7_tools)
+                
+                # Create graph with all tools
+                graph = build_greeter_graph(all_tools, sensitive_tools)
+                logger.info(f"MCP Graph Greeter created with {len(all_tools)} tools ({len(sensitive_tools)} requiring approval)")
+                
+                # Yield graph while keeping sessions active
+                yield graph
+                
     except Exception as e:
         logger.error(f"Error creating MCP Graph Greeter: {str(e)}")
         raise
