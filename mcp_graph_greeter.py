@@ -57,40 +57,7 @@ async def greeter(state: GreeterState, config: RunnableConfig) -> Dict:
     """Generate a personalized greeting and ask about files."""
 
     messages = state["messages"]
-    name = ""
-    for message in reversed(messages):
-        if isinstance(message, HumanMessage):
-            # Extract name from input (assuming format "Hello, my name is [name]")
-            content = message.content
-            if "my name is" in content.lower():
-                name = content.split("my name is", 1)[1].strip()
-            break
-
-    # Create a greeting
-    if name:
-        greeting = f"""Hello, {name}! Nice to meet you!
-
-I'm a filesystem assistant that can help you explore your files and directories.
-Try asking me something like:
-- "What files are in the current directory?"
-- "Show me the contents of a specific file"
-- "Create a new file for me"
-
-What would you like to know about your filesystem?"""
-    else:
-        greeting = """Hello there! I'm a filesystem assistant that can help you explore your files and directories.
-
-Try asking me something like:
-- "What files are in the current directory?"
-- "Show me the contents of a specific file"
-- "Create a new file for me"
-
-What would you like to know about your filesystem?"""
-    # Create response message and append to history
-    response = AIMessage(content=greeting)
-
-    logger.info(f"Generated greeting: {greeting}")
-    return {"messages": messages + [response]}
+    return {"messages": messages }
 
 
 def should_continue(state: GreeterState) -> str:
@@ -171,24 +138,12 @@ def build_greeter_graph(tools: List[BaseTool]) -> StateGraph:
         response = model_with_tools.invoke(messages, config)
         return {"messages": [response]}
 
-    # Async version of agent
-    async def async_agent(state: GreeterState, config: RunnableConfig) -> Dict:
-        """Async version of the agent function."""
-        messages = state["messages"]
-
-        # Add system message if not already present
-        if not any(isinstance(msg, SystemMessage) for msg in messages):
-            messages = [SystemMessage(content=system_prompt)] + messages
-
-        response = await model_with_tools.ainvoke(messages, config)
-        return {"messages": [response]}
-
     # Create the graph with input and output types
     workflow = StateGraph(GreeterState, input=GreeterInput, output=GreeterOutput)
 
     # Add nodes
     workflow.add_node("greeter", greeter)
-    workflow.add_node("agent", RunnableCallable(agent, async_agent))
+    workflow.add_node("agent", agent)
     workflow.add_node("respond", respond)
 
     # Add tools node
