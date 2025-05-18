@@ -38,7 +38,9 @@ async def interactive_session():
     try:
         # First message - introduce yourself - required
         while True:
-            user_input = input("\n🧑 Please introduce yourself (e.g., 'Hello, my name is Alice'): ")
+            user_input = input(
+                "\n🧑 Please introduce yourself (e.g., 'Hello, my name is Alice'): "
+            )
             if user_input:
                 break
             print("⚠️  Introduction is required. Please try again.")
@@ -62,7 +64,7 @@ async def interactive_session():
                 if user_input:
                     break
                 print("⚠️  Input is required. Please try again.")
-            
+
             # Check for exit command
             if user_input.lower() in ["exit", "quit", "bye"]:
                 print("\n👋 Thanks for using the MCP Graph Greeter Demo! Goodbye!")
