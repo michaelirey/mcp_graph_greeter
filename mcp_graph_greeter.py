@@ -52,11 +52,6 @@ class GreeterState(TypedDict, total=False):
     messages: Annotated[List[BaseMessage], add_messages]
 
 
-async def greeter(state: GreeterState, config: RunnableConfig) -> Dict:
-    """Generate a personalized greeting and ask about files."""
-
-    messages = state["messages"]
-    return {"messages": messages}
 
 
 def should_continue(state: GreeterState) -> str:
@@ -226,7 +221,6 @@ def build_greeter_graph(
     workflow = StateGraph(GreeterState, input=GreeterInput, output=GreeterOutput)
 
     # Add nodes
-    workflow.add_node("greeter", greeter)
     workflow.add_node("agent", agent)
     workflow.add_node("respond", respond)
     workflow.add_node("review_tool_calls", review_tool_calls)
@@ -235,9 +229,8 @@ def build_greeter_graph(
     tool_node = ToolNode(tools)
     workflow.add_node("tools", tool_node)
 
-    # Add edges
-    workflow.add_edge(START, "greeter")
-    workflow.add_edge("greeter", "agent")
+    # Add edges - start directly with agent instead of greeter
+    workflow.add_edge(START, "agent")
 
     # Add conditional edges for the agent
     workflow.add_conditional_edges(
