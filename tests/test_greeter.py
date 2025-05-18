@@ -39,3 +39,57 @@ def test_build_greeter_graph_compiles(monkeypatch):
     monkeypatch.setattr(mg, "ChatOpenAI", lambda model, api_key=None: DummyModel())
     graph = mg.build_greeter_graph([])
     assert graph is not None
+
+
+def test_load_server_configs():
+    configs = mg.load_server_configs()
+    assert any(c.server_name == "filesystem" for c in configs)
+
+
+@pytest.mark.asyncio
+async def test_graph_factory_namespaces(monkeypatch):
+    fs = mg.ServerConfig(
+        server_name="fs",
+        endpoint={},
+        allowed_tools=["write", "read"],
+        sensitive_tools=["write"],
+    )
+    sh = mg.ServerConfig(
+        server_name="sh",
+        endpoint={},
+        allowed_tools=["shell"],
+        sensitive_tools=["shell"],
+    )
+
+    monkeypatch.setattr(mg, "load_server_configs", lambda: [fs, sh])
+
+    class DummyTool:
+        def __init__(self, name, server):
+            self.name = name
+            self.metadata = {"server": server}
+
+    class DummyClient:
+        def __init__(self, servers):
+            pass
+
+        async def get_tools(self):
+            return [DummyTool("write", "fs"), DummyTool("shell", "sh")]
+
+    monkeypatch.setattr(mg, "MultiServerMCPClient", DummyClient)
+    monkeypatch.setattr(mg, "ChatOpenAI", lambda model, api_key=None: DummyModel())
+
+    captured = {}
+
+    def fake_build(tools, sensitive_tools=None):
+        captured["names"] = [t.name for t in tools]
+        captured["sens"] = sensitive_tools
+        return DummyGraph()
+
+    monkeypatch.setattr(mg, "build_greeter_graph", fake_build)
+
+    async with mg.graph_factory() as _:
+        pass
+
+    assert captured["names"] == ["fs.write", "sh.shell"]
+    assert captured["sens"] == ["fs.write", "sh.shell"]
+
