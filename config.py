@@ -41,6 +41,16 @@ MCP_SERVERS = {
             "@upstash/context7-mcp@latest"
         ],
         "transport": "stdio"  # Required by MultiServerMCPClient
+    },
+    "shell": {
+        "command": "uvx",
+        "args": [
+            "mcp-shell-server"
+        ],
+        "env": {
+            "ALLOW_COMMANDS": "ls,cat,pwd,grep,wc,touch,find,date,whoami"
+        },        
+        "transport": "stdio"  # Required by MultiServerMCPClient
     }
 }
 

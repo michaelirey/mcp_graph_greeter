@@ -267,43 +267,38 @@ async def graph_factory():
     logger.info("Initializing MCP Graph Greeter for LangGraph CLI")
 
     # Define allowed tools and sensitive tools that require approval
-    allowed_tools = ["list_directory", "read_file", "list_allowed_directories", "get_file_info", "search_files", "directory_tree"]
+    allowed_tools = ["resolve-library-id", "get-library-docs", "read_file", "write_file", "edit_file", "create_directory", "list_directory", "directory_tree", "move_file", "search_files", "get_file_info", "list_allowed_directories", "shell_execute"]
+    sensitive_tools = ["write_file", "edit_file", "create_directory", "move_file", "shell_execute"]
 
-
-    
-    sensitive_tools = ["read_file", "get_file_info"]
-    
     # Initialize tools list
     all_tools = []
     
-    # Create a client per server with its own session
-    filesystem_client = MultiServerMCPClient({"filesystem": MCP_SERVERS["filesystem"]})
-    context7_client = MultiServerMCPClient({"context7": MCP_SERVERS["context7"]})
+    # Create a combined client for all servers
+    all_servers = {}
+    all_servers.update({"filesystem": MCP_SERVERS["filesystem"]})
+    all_servers.update({"context7": MCP_SERVERS["context7"]})
+    all_servers.update({"shell": MCP_SERVERS["shell"]})
+    
+    # Create a single client for all servers
+    client = MultiServerMCPClient(all_servers)
     
     try:
-        # Load filesystem tools - keep session open for the duration
-        async with filesystem_client.session("filesystem") as fs_session:
-            # Get all tools
-            fs_tools = await load_mcp_tools(fs_session)
-            logger.info(f"Loaded {len(fs_tools)} filesystem tools")
-            
-            # Filter tools
-            fs_tools_filtered = [t for t in fs_tools if t.name in allowed_tools]
-            logger.info(f"Using {len(fs_tools_filtered)}/{len(fs_tools)} filesystem tools")
-            all_tools.extend(fs_tools_filtered)
-            
-            # Load context7 tools - keep session open for the duration
-            async with context7_client.session("context7") as c7_session:
-                c7_tools = await load_mcp_tools(c7_session)
-                logger.info(f"Loaded {len(c7_tools)} context7 tools")
-                all_tools.extend(c7_tools)
-                
-                # Create graph with all tools
-                graph = build_greeter_graph(all_tools, sensitive_tools)
-                logger.info(f"MCP Graph Greeter created with {len(all_tools)} tools ({len(sensitive_tools)} requiring approval)")
-                
-                # Yield graph while keeping sessions active
-                yield graph
+        # Get all tools directly without sessions
+        # This approach uses the client's built-in methods to handle session management
+        tools = await client.get_tools()
+        logger.info(f"Loaded {len(tools)} total tools")
+        
+        # Filter filesystem tools if needed
+        fs_tools_filtered = [t for t in tools if t.name in allowed_tools]
+        logger.info(f"Using {len(fs_tools_filtered)}/{len(tools)} allowed tools")
+        all_tools.extend(fs_tools_filtered)
+        
+        # Create graph with all tools
+        graph = build_greeter_graph(all_tools, sensitive_tools)
+        logger.info(f"MCP Graph Greeter created with {len(all_tools)} tools ({len(sensitive_tools)} requiring approval)")
+        
+        # Yield graph while keeping sessions active
+        yield graph
                 
     except Exception as e:
         logger.error(f"Error creating MCP Graph Greeter: {str(e)}")
