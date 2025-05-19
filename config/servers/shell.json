@@ -1,0 +1,15 @@
+{
+  "server_name": "shell",
+  "endpoint": {
+    "command": "uvx",
+    "args": ["mcp-shell-server"],
+    "env": {"ALLOW_COMMANDS": "ls,cat,pwd,grep,wc,touch,find,date,whoami"},
+    "transport": "stdio"
+  },
+  "allowed_tools": [
+    "shell_execute"
+  ],
+  "sensitive_tools": [
+    "shell_execute"
+  ]
+}
