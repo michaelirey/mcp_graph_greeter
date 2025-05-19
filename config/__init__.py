@@ -59,3 +59,16 @@ FILESYSTEM_SERVER = {"filesystem": MCP_SERVERS["filesystem"]}
 
 logger.info(f"Configured workspace directory: {WORKSPACE_DIR}")
 logger.info(f"Using LLM model: {LLM_MODEL_NAME}")
+
+from .loader import load_server_configs, ServerConfig, ConfigLoaderError
+
+__all__ = [
+    "MCP_SERVERS",
+    "FILESYSTEM_SERVER",
+    "OPENAI_API_KEY",
+    "LLM_MODEL_NAME",
+    "WORKSPACE_DIR",
+    "load_server_configs",
+    "ServerConfig",
+    "ConfigLoaderError",
+]

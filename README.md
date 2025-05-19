@@ -42,6 +42,7 @@ npm install -g @modelcontextprotocol/server-filesystem
    - Copy `.env.example` to `.env`
    - Add your OpenAI API key to the `.env` file
    - Optionally change the model name from the default "gpt-4.1" to another OpenAI model
+   - To add additional MCP servers, place a JSON file in `config/servers/` describing its endpoint and tools
 
 ## Usage
 
@@ -108,7 +109,8 @@ if __name__ == "__main__":
 
 - `mcp_graph_greeter.py` - Main implementation of the graph and LangGraph CLI entry point
 - `greeter_service.py` - Service functions for using the greeter in applications
-- `config.py` - Configuration for the MCP server
+- `config/` - Package containing configuration utilities
+  - `servers/*.json` - Per-server endpoint and tool configuration
 - `demo.py` - Command-line demo script
 - `langgraph.json` - Configuration for the LangGraph CLI
 - `__init__.py` - Package definition

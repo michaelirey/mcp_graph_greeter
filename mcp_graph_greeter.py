@@ -26,7 +26,13 @@ from langgraph.constants import END, START
 from langgraph.prebuilt.tool_node import ToolNode
 
 # Import MCP server configuration
-from config import MCP_SERVERS, OPENAI_API_KEY, LLM_MODEL_NAME
+from config import (
+    MCP_SERVERS,  # backward compatibility
+    OPENAI_API_KEY,
+    LLM_MODEL_NAME,
+    load_server_configs,
+    ServerConfig,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -50,6 +56,13 @@ class GreeterState(TypedDict, total=False):
     """State type for the MCP graph greeter."""
 
     messages: Annotated[List[BaseMessage], add_messages]
+
+
+def split_namespaced(name: str) -> tuple[str, str]:
+    """Split a namespaced tool name into (server, tool)."""
+    if "." not in name:
+        raise ValueError(f"Tool name '{name}' is not namespaced")
+    return name.split(".", 1)
 
 
 
@@ -153,9 +166,12 @@ def build_greeter_graph(
 
         tool_call = last_message.tool_calls[0]
         tool_name = tool_call["name"]
+        try:
+            server, base_tool = split_namespaced(tool_name)
+        except ValueError:
+            server, base_tool = None, tool_name
 
         # Only request human approval for specific sensitive tools defined at the graph_factory level
-
         # If the tool is not in our sensitive list, skip review
         if tool_name not in sensitive_tools:
             logger.info(f"Tool '{tool_name}' not sensitive - skipping review")
@@ -262,60 +278,51 @@ async def graph_factory():
     """
     logger.info("Initializing MCP Graph Greeter for LangGraph CLI")
 
-    # Define allowed tools and sensitive tools that require approval
-    allowed_tools = [
-        "resolve-library-id",
-        "get-library-docs",
-        "read_file",
-        "write_file",
-        "edit_file",
-        "create_directory",
-        "list_directory",
-        "directory_tree",
-        "move_file",
-        "search_files",
-        "get_file_info",
-        "list_allowed_directories",
-        "shell_execute",
-    ]
-    sensitive_tools = [
-        "write_file",
-        "edit_file",
-        "create_directory",
-        "move_file",
-        "shell_execute",
-    ]
+    configs = load_server_configs()
+    server_map = {c.server_name: c.endpoint for c in configs}
+    allowed_map = {c.server_name: set(c.allowed_tools) for c in configs}
+    sensitive_map = {c.server_name: set(c.sensitive_tools) for c in configs}
 
-    # Initialize tools list
-    all_tools = []
-
-    # Create a combined client for all servers
-    all_servers = {}
-    all_servers.update({"filesystem": MCP_SERVERS["filesystem"]})
-    all_servers.update({"context7": MCP_SERVERS["context7"]})
-    all_servers.update({"shell": MCP_SERVERS["shell"]})
-
-    # Create a single client for all servers
-    client = MultiServerMCPClient(all_servers)
+    client = MultiServerMCPClient(server_map)
 
     try:
-        # Get all tools directly without sessions
-        # This approach uses the client's built-in methods to handle session management
         tools = await client.get_tools()
         logger.info(f"Loaded {len(tools)} total tools")
 
-        # Filter filesystem tools if needed
-        fs_tools_filtered = [t for t in tools if t.name in allowed_tools]
-        logger.info(f"Using {len(fs_tools_filtered)}/{len(tools)} allowed tools")
-        all_tools.extend(fs_tools_filtered)
+        namespaced_tools: List[BaseTool] = []
+        seen = set()
 
-        # Create graph with all tools
-        graph = build_greeter_graph(all_tools, sensitive_tools)
+        for tool in tools:
+            meta = getattr(tool, "metadata", {}) or {}
+            server = meta.get("server") or meta.get("server_name")
+            if not server:
+                # Fall back to config lookup if metadata missing
+                for srv, allowed in allowed_map.items():
+                    if tool.name in allowed:
+                        server = srv
+                        break
+            if not server:
+                raise ValueError(f"Tool {tool.name} missing server metadata")
+
+            if tool.name not in allowed_map.get(server, set()):
+                continue
+
+            namespaced = f"{server}.{tool.name}"
+            if namespaced in seen:
+                raise ValueError(f"Duplicate tool after namespacing: {namespaced}")
+            seen.add(namespaced)
+
+            tool.metadata["original_name"] = tool.name
+            tool.name = namespaced
+            namespaced_tools.append(tool)
+
+        sensitive_names = [f"{srv}.{name}" for srv, names in sensitive_map.items() for name in names]
+
+        graph = build_greeter_graph(namespaced_tools, sensitive_names)
         logger.info(
-            f"MCP Graph Greeter created with {len(all_tools)} tools ({len(sensitive_tools)} requiring approval)"
+            f"MCP Graph Greeter created with {len(namespaced_tools)} tools ({len(sensitive_names)} requiring approval)"
         )
 
-        # Yield graph while keeping sessions active
         yield graph
 
     except Exception as e:
