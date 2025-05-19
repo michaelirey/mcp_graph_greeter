@@ -27,14 +27,6 @@ from langgraph.prebuilt.tool_node import ToolNode
 
 # Import MCP server configuration
 from config import MCP_SERVERS, OPENAI_API_KEY, LLM_MODEL_NAME
-from config.loader import (
-    load_server_configs,
-    create_server_map,
-    get_allowed_tools_map,
-    get_sensitive_tools_map,
-    namespace_tool_name,
-    split_namespaced_tool,
-)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -270,84 +262,62 @@ async def graph_factory():
     """
     logger.info("Initializing MCP Graph Greeter for LangGraph CLI")
 
+    # Define allowed tools and sensitive tools that require approval
+    allowed_tools = [
+        "resolve-library-id",
+        "get-library-docs",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "create_directory",
+        "list_directory",
+        "directory_tree",
+        "move_file",
+        "search_files",
+        "get_file_info",
+        "list_allowed_directories",
+        "shell_execute",
+    ]
+    sensitive_tools = [
+        "write_file",
+        "edit_file",
+        "create_directory",
+        "move_file",
+        "shell_execute",
+    ]
+
+    # Initialize tools list
+    all_tools = []
+
+    # Create a combined client for all servers
+    all_servers = {}
+    all_servers.update({"filesystem": MCP_SERVERS["filesystem"]})
+    all_servers.update({"context7": MCP_SERVERS["context7"]})
+    all_servers.update({"shell": MCP_SERVERS["shell"]})
+
+    # Create a single client for all servers
+    client = MultiServerMCPClient(all_servers)
+
     try:
-        # Load server configurations from JSON files
-        server_configs = load_server_configs()
-        if not server_configs:
-            logger.error("No server configurations found")
-            raise ValueError("No server configurations found. Please add at least one server configuration to the config/servers directory.")
-        
-        # Create maps for server endpoints, allowed tools, and sensitive tools
-        server_map = create_server_map(server_configs)
-        allowed_tools_map = get_allowed_tools_map(server_configs)
-        sensitive_tools_map = get_sensitive_tools_map(server_configs)
-        
-        logger.info(f"Loaded configurations for {len(server_configs)} servers")
-        
-        # Create a client for all servers
-        client = MultiServerMCPClient(server_map)
-        
-        # Get all tools from all servers
-        all_tools = []
-        raw_tools = await client.get_tools()
-        logger.info(f"Loaded {len(raw_tools)} total tools from all servers")
-        
-        # Process and namespace tools
-        all_sensitive_tools = []
-        for tool in raw_tools:
-            # Initialize metadata if None
-            if tool.metadata is None:
-                tool.metadata = {}
-                
-            # Get the server name from the tool metadata
-            server_name = tool.metadata.get("server_name")
-            if not server_name:
-                # Try to determine server from the available servers
-                # This is a fallback for tools that don't have server_name in metadata
-                for server in server_map.keys():
-                    if tool.name in allowed_tools_map.get(server, []):
-                        server_name = server
-                        tool.metadata["server_name"] = server_name
-                        logger.info(f"Assigned server '{server_name}' to tool '{tool.name}' based on allowed tools list")
-                        break
-                
-                # If still no server_name, skip this tool
-                if not server_name:
-                    logger.warning(f"Tool {tool.name} missing server_name in metadata and couldn't determine server, skipping")
-                    continue
-            
-            # Check if the tool is in the allowed list for its server
-            if tool.name not in allowed_tools_map.get(server_name, []):
-                logger.debug(f"Tool {tool.name} from server {server_name} not in allowed list, skipping")
-                continue
-            
-            # Preserve the original tool name in metadata
-            tool.metadata["original_name"] = tool.name
-            
-            # Namespace the tool name using underscore separator
-            namespaced_name = namespace_tool_name(server_name, tool.name)
-            tool.name = namespaced_name
-            
-            # Add the tool to the list
-            all_tools.append(tool)
-            
-            # Check if this tool is sensitive and add to the sensitive list
-            if tool.metadata["original_name"] in sensitive_tools_map.get(server_name, []):
-                all_sensitive_tools.append(namespaced_name)
-        
-        logger.info(f"Using {len(all_tools)} namespaced tools after filtering")
-        
-        # Create graph with all tools and sensitive tools
-        graph = build_greeter_graph(all_tools, all_sensitive_tools)
-        
-        # Count sensitive tools for logging
+        # Get all tools directly without sessions
+        # This approach uses the client's built-in methods to handle session management
+        tools = await client.get_tools()
+        logger.info(f"Loaded {len(tools)} total tools")
+
+        # Filter filesystem tools if needed
+        fs_tools_filtered = [t for t in tools if t.name in allowed_tools]
+        logger.info(f"Using {len(fs_tools_filtered)}/{len(tools)} allowed tools")
+        all_tools.extend(fs_tools_filtered)
+
+        # Create graph with all tools
+        graph = build_greeter_graph(all_tools, sensitive_tools)
         logger.info(
-            f"MCP Graph Greeter created with {len(all_tools)} tools ({len(all_sensitive_tools)} requiring approval)"
+            f"MCP Graph Greeter created with {len(all_tools)} tools ({len(sensitive_tools)} requiring approval)"
         )
-        
+
         # Yield graph while keeping sessions active
         yield graph
-        
+
     except Exception as e:
         logger.error(f"Error creating MCP Graph Greeter: {str(e)}")
         raise

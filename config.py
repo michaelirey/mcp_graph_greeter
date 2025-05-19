@@ -21,7 +21,7 @@ WORKSPACE_DIR = os.getcwd()  # Use current working directory as workspace
 # API configuration
 # Check for OpenAI API key in environment variables (empty by default, will use system config)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-4.1-mini")
+LLM_MODEL_NAME = os.environ.get("LLM_MODEL_NAME", "gpt-4.1")
 
 # MCP server configurations
 MCP_SERVERS = {

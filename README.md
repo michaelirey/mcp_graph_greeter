@@ -13,8 +13,6 @@ This project showcases how to integrate LangGraph with MCP tools to create an in
 - File reading and creation
 - Proper resource management with async context managers
 - Structured LangGraph workflow
-- Server configuration via JSON files
-- Tool namespacing for uniqueness across servers
 
 ## Requirements
 
@@ -28,68 +26,22 @@ This project showcases how to integrate LangGraph with MCP tools to create an in
 ## Installation
 
 1. Clone this repository
-2. Install the package and its dependencies:
-
-```bash
-# Using uv (recommended)
-uv install -e .
-
-# Or using pip
-pip install -e .
-```
-
-3. Install the LangGraph CLI:
+2. Install the LangGraph CLI and dependencies using uvx:
 
 ```bash
 pip install uvx
 ```
 
-4. Install the MCP filesystem server:
+3. Install the MCP filesystem server:
 
 ```bash
 npm install -g @modelcontextprotocol/server-filesystem
 ```
 
-5. Configure environment variables:
+4. Configure environment variables:
    - Copy `.env.example` to `.env`
    - Add your OpenAI API key to the `.env` file
    - Optionally change the model name from the default "gpt-4.1" to another OpenAI model
-   - To add additional MCP servers, place a JSON file in `config/servers/` describing its endpoint and tools
-
-## Server Configuration
-
-The MCP Graph Greeter uses a data-driven approach for configuring MCP servers. Each server has its own JSON configuration file in the `config/servers/` directory.
-
-### Configuration Format
-
-Each server configuration file should follow this structure:
-
-```json
-{
-  "server_name": "filesystem",
-  "endpoint": {
-    "command": "npx",
-    "args": ["-y", "@modelcontextprotocol/server-filesystem", "${WORKSPACE_DIR}"],
-    "transport": "stdio"
-  },
-  "allowed_tools": ["read_file", "write_file", "list_directory"],
-  "sensitive_tools": ["write_file"]
-}
-```
-
-### Adding a New Server
-
-To add a new MCP server:
-
-1. Create a new JSON file in the `config/servers/` directory
-2. Define the server_name, endpoint, allowed_tools, and sensitive_tools
-3. Restart the application
-
-No code changes are required to add a new server.
-
-### Tool Namespacing
-
-All tools are namespaced using the pattern `<server_name>_<tool_name>` to ensure uniqueness. For example, the `read_file` tool from the `filesystem` server becomes `filesystem_read_file`. This prevents conflicts when multiple servers provide tools with the same name and ensures compatibility with OpenAI's tool name requirements.
 
 ## Usage
 
@@ -103,7 +55,7 @@ uvx --refresh --from "langgraph-cli[inmem]" --with-editable . --python 3.11 lang
 
 This will:
 1. Start the LangGraph development server
-2. Launch the MCP servers defined in the configuration files
+2. Launch the MCP filesystem server
 3. Create the graph with all necessary tools
 4. Open a web interface for interacting with the assistant
 
@@ -156,13 +108,7 @@ if __name__ == "__main__":
 
 - `mcp_graph_greeter.py` - Main implementation of the graph and LangGraph CLI entry point
 - `greeter_service.py` - Service functions for using the greeter in applications
-- `config/` - Configuration package
-  - `__init__.py` - Basic configuration and environment variables
-  - `loader.py` - Server configuration loader
-  - `servers/` - Directory containing server configuration files
-    - `filesystem.json` - Filesystem server configuration
-    - `context7.json` - Context7 server configuration
-    - `shell.json` - Shell command server configuration
+- `config.py` - Configuration for the MCP server
 - `demo.py` - Command-line demo script
 - `langgraph.json` - Configuration for the LangGraph CLI
 - `__init__.py` - Package definition
@@ -170,8 +116,6 @@ if __name__ == "__main__":
 ## Security Considerations
 
 This demo only allows access to the current working directory for safety reasons. The MCP filesystem server restricts file operations to this directory tree.
-
-The configuration system lets you mark specific tools as sensitive, requiring human approval before execution.
 
 ## Acknowledgements
 
